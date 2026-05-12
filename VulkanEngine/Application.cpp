@@ -132,11 +132,190 @@ namespace CharismaVulkan {
 		}
 	}
 	void Application::createSurface() {
+		assert(m_instance != VK_NULL_HANDLE);
+		assert(m_window != nullptr);
 
+		if (glfwCreateWindowSurface(m_instance, m_window, nullptr, &m_surface) != VK_SUCCESS)
+		{
+			throw std::runtime_error("failed to create window surface!");
+		}
+		else
+		{
+			cout << "VKSurfaceKHR created successfully!" << std::endl;
+		}
 	}
 	void Application::pickPhysicalDevice() {
+		assert(m_instance != VK_NULL_HANDLE);
 
+		uint32_t deviceCount = 0;
+		vkEnumeratePhysicalDevices(m_instance, &deviceCount, nullptr);
+
+		if (deviceCount == 0)
+		{
+			throw std::runtime_error("failed to find GPUs with Vulkan support!");
+		}
+
+		std::vector<VkPhysicalDevice> devices(deviceCount);
+		vkEnumeratePhysicalDevices(m_instance, &deviceCount, devices.data());
+
+		std::multimap<int, VkPhysicalDevice> devicesByScore;
+		for (const auto& device : devices)
+		{
+			int score = rateDeviceSuitability(device);
+			devicesByScore.insert(std::make_pair(score, device));
+		}
+
+		if (!devicesByScore.empty() && devicesByScore.rbegin()->first > 0)
+		{
+			m_physicalDevice = devicesByScore.rbegin()->second;
+			VkPhysicalDeviceProperties deviceProperties;
+			vkGetPhysicalDeviceProperties(m_physicalDevice, &deviceProperties);
+
+			cout << "Physical device selected: " << deviceProperties.deviceName << std::endl;
+		}
+		else
+		{
+			throw std::runtime_error("failed to find a suitable GPU!");
+		}
 	}
+	int
+		Application::rateDeviceSuitability(const VkPhysicalDevice& device)
+	{
+		assert(device != VK_NULL_HANDLE);
+
+		VkPhysicalDeviceProperties deviceProperties;
+		vkGetPhysicalDeviceProperties(device, &deviceProperties);
+
+		VkPhysicalDeviceFeatures deviceFeatures;
+		vkGetPhysicalDeviceFeatures(device, &deviceFeatures);
+
+		// Hard requirements
+		QueueFamilyIndices indices = findQueueFamilies(device);
+		if (!indices.isComplete())
+		{
+			return 0;
+		}
+		if (!checkDeviceExtensionSupport(device))
+		{
+			return 0;
+		}
+		SwapChainSupportDetails swapChainSupport = querySwapChainSupport(device);
+		if (swapChainSupport.formats.empty() || swapChainSupport.presentModes.empty())
+		{
+			return 0;
+		}
+
+		// Optional features weighted by value
+		int score = 0;
+
+		// Graphics and presentation using the same family is more performant
+		if (indices.graphicsFamily == indices.presentFamily)
+		{
+			score += 100;
+		}
+		if (deviceProperties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU)
+		{
+			score += 1000;
+		}
+		score += deviceProperties.limits.maxImageDimension2D;
+
+		return score;
+	}
+	QueueFamilyIndices Application::findQueueFamilies(const VkPhysicalDevice& device)
+	{
+		assert(device != VK_NULL_HANDLE);
+		assert(m_surface != VK_NULL_HANDLE);
+
+		QueueFamilyIndices indices;
+
+		uint32_t queueFamilyCount = 0;
+		vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, nullptr);
+
+		std::vector<VkQueueFamilyProperties> queueFamilies(queueFamilyCount);
+		vkGetPhysicalDeviceQueueFamilyProperties(
+			device, &queueFamilyCount, queueFamilies.data());
+
+		int i = 0;
+		for (const auto& queueFamily : queueFamilies)
+		{
+			VkBool32 presentSupport = false;
+			vkGetPhysicalDeviceSurfaceSupportKHR(device, i, m_surface, &presentSupport);
+			if (queueFamily.queueCount > 0 && presentSupport)
+			{
+				indices.presentFamily = i;
+			}
+
+			if (queueFamily.queueCount > 0 && queueFamily.queueFlags & VK_QUEUE_GRAPHICS_BIT)
+			{
+				indices.graphicsFamily = i;
+			}
+
+			if (indices.isComplete())
+			{
+				break;
+			}
+			i++;
+		}
+
+		return indices;
+	}
+
+	bool
+		Application::checkDeviceExtensionSupport(const VkPhysicalDevice& device)
+	{
+		assert(device != VK_NULL_HANDLE);
+
+		uint32_t extensionCount;
+		vkEnumerateDeviceExtensionProperties(device, nullptr, &extensionCount, nullptr);
+
+		std::vector<VkExtensionProperties> availableExtensions(extensionCount);
+		vkEnumerateDeviceExtensionProperties(
+			device, nullptr, &extensionCount, availableExtensions.data());
+
+		std::set<std::string> requiredExtensions(
+			DEVICE_EXTENSIONS.begin(), DEVICE_EXTENSIONS.end());
+		for (const auto& extension : availableExtensions)
+		{
+			requiredExtensions.erase(extension.extensionName);
+		}
+
+		return requiredExtensions.empty();
+	}
+
+	SwapChainSupportDetails Application::querySwapChainSupport(VkPhysicalDevice device)
+	{
+		assert(device != VK_NULL_HANDLE);
+		assert(m_surface != VK_NULL_HANDLE);
+
+		SwapChainSupportDetails details;
+
+		// Surface Caps
+		vkGetPhysicalDeviceSurfaceCapabilitiesKHR(device, m_surface, &details.capabilities);
+
+		// Surface Formats
+		uint32_t formatCount;
+		vkGetPhysicalDeviceSurfaceFormatsKHR(device, m_surface, &formatCount, nullptr);
+		if (formatCount != 0)
+		{
+			details.formats.resize(formatCount);
+			vkGetPhysicalDeviceSurfaceFormatsKHR(
+				device, m_surface, &formatCount, details.formats.data());
+		}
+
+		// Presentation Modes
+		uint32_t presentModeCount;
+		vkGetPhysicalDeviceSurfacePresentModesKHR(
+			device, m_surface, &presentModeCount, nullptr);
+		if (presentModeCount != 0)
+		{
+			details.presentModes.resize(presentModeCount);
+			vkGetPhysicalDeviceSurfacePresentModesKHR(
+				device, m_surface, &presentModeCount, details.presentModes.data());
+		}
+
+		return details;
+	}
+
 	void Application::createLogicalDevice() {
 
 	}

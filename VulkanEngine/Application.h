@@ -6,14 +6,22 @@
 #include <stdexcept>
 #include <vector>
 #include <iostream>
+#include <map>
+#include <set>
+
 #include <optional>
 #include <cassert>
 #define WINDOW_WIDTH 800
 #define WINDOW_HEIGHT 600
 
-constexpr bool ENABLE_VALIDATION_LAYERS = true;
 using namespace std;
+
+constexpr bool ENABLE_VALIDATION_LAYERS = true;
+
+
+const std::vector<const char*> DEVICE_EXTENSIONS = { VK_KHR_SWAPCHAIN_EXTENSION_NAME };
 const std::vector<const char*> VALIDATION_LAYERS = { "VK_LAYER_KHRONOS_validation" };
+
 static VkDebugUtilsMessengerEXT sg_debugMessenger;
 
 static VkResult
@@ -66,6 +74,20 @@ populateDebugMessengerCreateInfo(VkDebugUtilsMessengerCreateInfoEXT& createInfo)
 		| VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
 	createInfo.pfnUserCallback = debugCallback;
 }
+struct QueueFamilyIndices
+{
+	std::optional<uint32_t> graphicsFamily;
+	std::optional<uint32_t> presentFamily;
+
+	bool isComplete() { return graphicsFamily.has_value() && presentFamily.has_value(); }
+};
+
+struct SwapChainSupportDetails
+{
+	VkSurfaceCapabilitiesKHR capabilities = {};
+	std::vector<VkSurfaceFormatKHR> formats;
+	std::vector<VkPresentModeKHR> presentModes;
+};
 
 namespace CharismaVulkan {
 	class Application {
@@ -95,8 +117,15 @@ namespace CharismaVulkan {
 		void recreateSwapChain();
 		void cleanupSwapChain();
 		std::vector<const char*> getRequiredExtensions();
-		GLFWwindow* m_window;
-		VkInstance m_instance;
+		int rateDeviceSuitability(const VkPhysicalDevice& device);
+		QueueFamilyIndices findQueueFamilies(const VkPhysicalDevice& device);
+		bool checkDeviceExtensionSupport(const VkPhysicalDevice& device);
+		SwapChainSupportDetails querySwapChainSupport(VkPhysicalDevice device);
 
+
+		GLFWwindow* m_window;
+		VkInstance m_instance  = VK_NULL_HANDLE;
+		VkSurfaceKHR m_surface = VK_NULL_HANDLE;
+		VkPhysicalDevice m_physicalDevice = VK_NULL_HANDLE;
 	};
 }
