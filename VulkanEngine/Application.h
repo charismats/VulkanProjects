@@ -1,13 +1,15 @@
 #pragma once
-#include <Windows.h>
+
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
 
 #include <stdexcept>
+#include <algorithm>
 #include <vector>
 #include <iostream>
 #include <map>
 #include <set>
+#include <fstream>
 
 #include <optional>
 #include <cassert>
@@ -17,7 +19,7 @@
 using namespace std;
 
 constexpr bool ENABLE_VALIDATION_LAYERS = true;
-
+constexpr int MAX_FRAMES_IN_FLIGHT = 2;
 
 const std::vector<const char*> DEVICE_EXTENSIONS = { VK_KHR_SWAPCHAIN_EXTENSION_NAME };
 const std::vector<const char*> VALIDATION_LAYERS = { "VK_LAYER_KHRONOS_validation" };
@@ -51,8 +53,8 @@ debugCallback(
 	const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData,
 	void* pUserData)
 {
-	UNREFERENCED_PARAMETER(messageType);
-	UNREFERENCED_PARAMETER(pUserData);
+	//UNREFERENCED_PARAMETER(messageType);
+	//UNREFERENCED_PARAMETER(pUserData);
 
 	if (messageSeverity >= VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT)
 	{
@@ -74,6 +76,42 @@ populateDebugMessengerCreateInfo(VkDebugUtilsMessengerCreateInfoEXT& createInfo)
 		| VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
 	createInfo.pfnUserCallback = debugCallback;
 }
+static std::vector<char>
+readFile(const std::string& filename)
+{
+	try
+	{
+		std::ifstream file(filename, std::ios::ate | std::ios::binary);
+		if (!file.is_open())
+		{
+			cerr << "Failed to open file : " << filename << endl;
+		}
+
+		size_t fileSize = file.tellg();
+		std::vector<char> buffer(fileSize);
+		file.seekg(0);
+		file.read(buffer.data(), fileSize);
+		return buffer;
+	}
+	catch (const std::exception& ex)
+	{
+		throw ex;
+	}
+}
+static void
+DestroyDebugUtilsMessengerEXT(
+	VkInstance instance,
+	VkDebugUtilsMessengerEXT debugMessenger,
+	const VkAllocationCallbacks* pAllocator)
+{
+	auto func = (PFN_vkDestroyDebugUtilsMessengerEXT)vkGetInstanceProcAddr(
+		instance, "vkDestroyDebugUtilsMessengerEXT");
+	if (func != nullptr)
+	{
+		func(instance, debugMessenger, pAllocator);
+	}
+}
+
 struct QueueFamilyIndices
 {
 	std::optional<uint32_t> graphicsFamily;
@@ -121,11 +159,38 @@ namespace CharismaVulkan {
 		QueueFamilyIndices findQueueFamilies(const VkPhysicalDevice& device);
 		bool checkDeviceExtensionSupport(const VkPhysicalDevice& device);
 		SwapChainSupportDetails querySwapChainSupport(VkPhysicalDevice device);
-
+		VkSurfaceFormatKHR chooseSwapSurfaceFormat(const std::vector<VkSurfaceFormatKHR>& availableFormats);
+		VkPresentModeKHR chooseSwapPresentMode(const std::vector<VkPresentModeKHR>& availablePresentModes);
+		VkExtent2D chooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities);
+		VkShaderModule createShaderModule(const std::vector<char>& code);
 
 		GLFWwindow* m_window;
 		VkInstance m_instance  = VK_NULL_HANDLE;
 		VkSurfaceKHR m_surface = VK_NULL_HANDLE;
 		VkPhysicalDevice m_physicalDevice = VK_NULL_HANDLE;
+		VkDevice m_device = VK_NULL_HANDLE;
+
+		VkQueue m_graphicsQueue;
+		VkQueue m_presentQueue;
+		VkSwapchainKHR m_swapChain = VK_NULL_HANDLE;
+		std::vector<VkImage> m_swapChainImages;
+		std::vector<VkImageView> m_swapChainImageViews;
+		VkFormat m_swapChainImageFormat;
+		VkExtent2D m_swapChainExtent;
+
+		VkRenderPass m_renderPass;
+		VkPipelineLayout m_pipelineLayout = VK_NULL_HANDLE;
+		VkPipeline m_graphicsPipeline;
+
+		std::vector<VkFramebuffer> m_swapChainFramebuffers;
+		VkCommandPool m_commandPool;
+		std::vector<VkCommandBuffer> m_commandBuffers;
+
+		std::vector<VkSemaphore> m_imageAvailableSemaphores;
+		std::vector<VkSemaphore> m_renderFinishedSemaphores;
+		std::vector<VkFence> m_inFlightFences;
+		size_t m_currentFrame = 0;
+
+		bool m_framebufferResized = false;
 	};
 }
